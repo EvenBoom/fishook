@@ -1,4 +1,4 @@
-module my.project.com/root/fishook
+module github.com/EvenBoom/fishook
 
 go 1.16
 
