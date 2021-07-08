@@ -1,2 +1,2 @@
 # fishook
-jwt with golang.
+JWT with golang.
