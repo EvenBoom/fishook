@@ -194,6 +194,9 @@ func (token *Token) CreateToken(timestamp int64, params map[string]interface{}) 
 	payload := `{"exp":"` + expStr + `"`
 
 	for k, v := range params {
+		if k == "exp" {
+			continue
+		}
 		switch v := v.(type) {
 		case string:
 			payload = payload + `,` + `"` + k + `":"` + v + `"`
