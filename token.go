@@ -231,6 +231,9 @@ func (token *Token[T]) ValidateToken(now time.Time, tokenStr string) (tokenResul
 	}
 
 	head, load = token.tokenParams(tokenStr)
+	if head.Expire == 0 {
+		return Timeout, head, nil
+	}
 
 	if head.Expire < now.Unix() {
 		return Timeout, head, nil
@@ -250,6 +253,11 @@ func (token *Token[T]) ValidateToken(now time.Time, tokenStr string) (tokenResul
 
 // tokenParams get token params.
 func (token *Token[T]) tokenParams(tokenStr string) (head Head, load *T) {
+
+	tokenStrs := strings.Split(tokenStr, ".")
+	if len(tokenStrs) < 2 {
+		return
+	}
 
 	// head
 	splitStr := strings.Split(tokenStr, ".")[0]
