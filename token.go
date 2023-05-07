@@ -224,16 +224,16 @@ func (token *Token[T]) CreateToken(timestamp int64, tokenLoad *T) (tokenStr stri
 }
 
 // ValidateToken validate token.
-func (token *Token[T]) ValidateToken(tokenStr string) (tokenResult Result, load *T) {
+func (token *Token[T]) ValidateToken(tokenStr string) (tokenResult Result, head Head, load *T) {
 
 	if tokenStr == "" {
-		return Failure, nil
+		return Failure, head, nil
 	}
 
-	head, load := token.tokenParams(tokenStr)
+	head, load = token.tokenParams(tokenStr)
 
 	if head.Expire < time.Now().Unix() {
-		return Timeout, nil
+		return Timeout, head, nil
 	}
 
 	for i := 0; i < 2; i++ {
@@ -241,11 +241,11 @@ func (token *Token[T]) ValidateToken(tokenStr string) (tokenResult Result, load 
 		base64Str := strings.Split(tokenStr, ".")[0] + "." + strings.Split(tokenStr, ".")[1] + "~" + keyBase64
 		signatureBase64 := strings.Split(tokenStr, ".")[2]
 		if signatureBase64 == toSha256(base64Str) {
-			return Success, load
+			return Success, head, load
 		}
 	}
 
-	return Failure, nil
+	return Failure, head, nil
 }
 
 // tokenParams get token params.
