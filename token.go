@@ -50,6 +50,7 @@ type Head struct {
 	Type      string `json:"typ"`
 	Algorithm string `json:"alg"`
 	Expire    int64  `json:"exp"`
+	Refresh   int64  `json:"ref"`
 }
 
 var KeyDir = "./fishook/"
@@ -193,17 +194,16 @@ func (token *Token[T]) keysTimer() error {
 }
 
 // CreateToken create a token.
-func (token *Token[T]) CreateToken(timestamp int64, tokenLoad *T) (tokenStr string) {
-
-	now := time.Now()
+func (token *Token[T]) CreateToken(now time.Time, expire, refresh int64, tokenLoad *T) (tokenStr string) {
 
 	var tokenHead Head
 	tokenHead.Type = "JWT"
 	tokenHead.Algorithm = "HS256"
 	tokenHead.Expire = now.Unix() + token.Timestamp
-	if timestamp > 0 && timestamp <= token.Timestamp {
-		tokenHead.Expire = now.Unix() + timestamp
+	if expire > 0 && expire <= token.Timestamp {
+		tokenHead.Expire = now.Unix() + expire
 	}
+	tokenHead.Refresh = now.Unix() + refresh
 
 	head, _ := jsoniter.Marshal(tokenHead)
 	var load []byte
@@ -224,7 +224,7 @@ func (token *Token[T]) CreateToken(timestamp int64, tokenLoad *T) (tokenStr stri
 }
 
 // ValidateToken validate token.
-func (token *Token[T]) ValidateToken(tokenStr string) (tokenResult Result, head Head, load *T) {
+func (token *Token[T]) ValidateToken(now time.Time, tokenStr string) (tokenResult Result, head Head, load *T) {
 
 	if tokenStr == "" {
 		return Failure, head, nil
@@ -232,7 +232,7 @@ func (token *Token[T]) ValidateToken(tokenStr string) (tokenResult Result, head 
 
 	head, load = token.tokenParams(tokenStr)
 
-	if head.Expire < time.Now().Unix() {
+	if head.Expire < now.Unix() {
 		return Timeout, head, nil
 	}
 

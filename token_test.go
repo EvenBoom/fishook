@@ -17,11 +17,14 @@ func TestCreateTokenKeys(t *testing.T) {
 	for i := 0; i < 100000; i++ {
 		group.Add(1)
 		go func() {
-			tokenStr := token.CreateToken(5, &User{Username: "Test", Password: "123456"})
+			now := time.Now()
+			tokenStr := token.CreateToken(now, 5, 3, &User{Username: "Test", Password: "123456"})
 			time.Sleep(time.Second)
-			token.ValidateToken(tokenStr)
+			now = time.Now()
+			token.ValidateToken(now, tokenStr)
 			time.Sleep(time.Second)
-			token.ValidateToken(tokenStr)
+			now = time.Now()
+			token.ValidateToken(now, tokenStr)
 			atomic.AddInt64(&num, 1)
 			group.Done()
 		}()
