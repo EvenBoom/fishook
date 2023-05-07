@@ -232,7 +232,7 @@ func (token *Token[T]) ValidateToken(now time.Time, tokenStr string) (tokenResul
 
 	head, load = token.tokenParams(tokenStr)
 	if head.Expire == 0 {
-		return Timeout, head, nil
+		return Failure, head, nil
 	}
 
 	if head.Expire < now.Unix() {
