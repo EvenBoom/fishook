@@ -9,7 +9,7 @@ import (
 )
 
 func TestCreateTokenKeys(t *testing.T) {
-	token := new(Token)
+	token := new(Token[User])
 	token.CreateTokenKeys(10)
 	<-token.ReadyChan
 	group := new(sync.WaitGroup)
@@ -17,8 +17,7 @@ func TestCreateTokenKeys(t *testing.T) {
 	for i := 0; i < 100000; i++ {
 		group.Add(1)
 		go func() {
-			params := make(map[string]interface{})
-			tokenStr := token.CreateToken(5, params)
+			tokenStr := token.CreateToken(5, &User{Username: "Test", Password: "123456"})
 			time.Sleep(time.Second)
 			token.ValidateToken(tokenStr)
 			time.Sleep(time.Second)
@@ -29,4 +28,10 @@ func TestCreateTokenKeys(t *testing.T) {
 	}
 	group.Wait()
 	fmt.Println(num)
+}
+
+// User test object
+type User struct {
+	Username string
+	Password string
 }

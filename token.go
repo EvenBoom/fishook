@@ -4,14 +4,13 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"io"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	jsoniter "github.com/json-iterator/go"
 )
 
 /*
@@ -31,7 +30,7 @@ const (
 )
 
 // Token token.
-type Token struct {
+type Token[T any] struct {
 	Keys      [2]string
 	Timestamp int64
 	Interval  int64
@@ -46,21 +45,29 @@ type KeyLog struct {
 	Deadline int64
 }
 
-var KeyLogFile = "./fishook/token.key"
-var KeyTmpFile = "./fishook/token.key.tmp"
+// Head head of token
+type Head struct {
+	Type      string `json:"typ"`
+	Algorithm string `json:"alg"`
+	Expire    int64  `json:"exp"`
+}
+
+var KeyDir = "./fishook/"
+var KeyLogFile = KeyDir + "token.key"
+var KeyTmpFile = KeyDir + "token.key.tmp"
 
 // SetLogFile set log file path.
-func (token *Token) SetLogFile(path string) {
+func (token *Token[T]) SetLogFile(path string) {
 	KeyLogFile = path
 }
 
 // SetLogTmpFile set log tmp file path.
-func (token *Token) SetLogTmpFile(path string) {
+func (token *Token[T]) SetLogTmpFile(path string) {
 	KeyTmpFile = path
 }
 
 // Log key-persistence.
-func (token *Token) WriteLog() error {
+func (token *Token[T]) WriteLog() error {
 	err := os.Rename(KeyLogFile, KeyTmpFile)
 	if err != nil {
 		return err
@@ -72,7 +79,7 @@ func (token *Token) WriteLog() error {
 	}
 	defer logFile.Close()
 
-	data, err := json.Marshal(&token.KeyLogs)
+	data, err := jsoniter.Marshal(&token.KeyLogs)
 	if err != nil {
 		return err
 	}
@@ -86,7 +93,12 @@ func (token *Token) WriteLog() error {
 }
 
 // ReadLog key-persistence.
-func (token *Token) ReadLog() error {
+func (token *Token[T]) ReadLog() error {
+
+	err := os.MkdirAll(KeyDir, os.ModeDir)
+	if err != nil {
+		return err
+	}
 
 	logFile, err := os.OpenFile(KeyLogFile, os.O_RDONLY|os.O_CREATE, os.ModePerm)
 	if err != nil {
@@ -101,7 +113,7 @@ func (token *Token) ReadLog() error {
 		return err
 	}
 
-	err = json.Unmarshal(data, &keyLogs)
+	err = jsoniter.Unmarshal(data, &keyLogs)
 	if err != nil {
 		return err
 	}
@@ -128,7 +140,7 @@ func (token *Token) ReadLog() error {
 }
 
 // CreateTokenKeys create keys of token, token's longest expired-time is the double of param key's.
-func (token *Token) CreateTokenKeys(timestamp int64) {
+func (token *Token[T]) CreateTokenKeys(timestamp int64) {
 	token.Timestamp = timestamp
 	token.ReadyChan = make(chan bool)
 	token.ReadLog()
@@ -136,7 +148,7 @@ func (token *Token) CreateTokenKeys(timestamp int64) {
 }
 
 // keysTimer key will auto change each time interval.
-func (token *Token) keysTimer() error {
+func (token *Token[T]) keysTimer() error {
 
 	timestamp := token.Timestamp
 	if token.Interval > 0 {
@@ -181,59 +193,46 @@ func (token *Token) keysTimer() error {
 }
 
 // CreateToken create a token.
-func (token *Token) CreateToken(timestamp int64, params map[string]interface{}) (tokenStr string) {
+func (token *Token[T]) CreateToken(timestamp int64, tokenLoad *T) (tokenStr string) {
 
 	now := time.Now()
 
-	expStr := strconv.FormatInt(now.Unix()+token.Timestamp, 10)
+	var tokenHead Head
+	tokenHead.Type = "JWT"
+	tokenHead.Algorithm = "HS256"
+	tokenHead.Expire = now.Unix() + token.Timestamp
 	if timestamp > 0 && timestamp <= token.Timestamp {
-		expStr = strconv.FormatInt(now.Unix()+timestamp, 10)
+		tokenHead.Expire = now.Unix() + timestamp
 	}
 
-	head := `{"typ":"JWT","alg":"HS256"}`
-	payload := `{"exp":"` + expStr + `"`
-
-	for k, v := range params {
-		if k == "exp" {
-			continue
-		}
-		switch v := v.(type) {
-		case string:
-			payload = payload + `,` + `"` + k + `":"` + v + `"`
-		case float64:
-			payload = payload + `,` + `"` + k + `":` + strconv.FormatFloat(v, 'f', -1, 64) + ``
-		case int64:
-			payload = payload + `,` + `"` + k + `":` + strconv.FormatInt(v, 10) + ``
-		default:
-			return ""
-		}
+	head, _ := jsoniter.Marshal(tokenHead)
+	var load []byte
+	if tokenLoad != nil {
+		load, _ = jsoniter.Marshal(tokenLoad)
 	}
-
-	payload = payload + `}`
 
 	key := token.Keys[0]
 
-	headBase64 := base64.StdEncoding.EncodeToString([]byte(head))
-	payloadBase64 := base64.StdEncoding.EncodeToString([]byte(payload))
+	headBase64 := base64.StdEncoding.EncodeToString(head)
+	loadBase64 := base64.StdEncoding.EncodeToString(load)
 	keyBase64 := base64.StdEncoding.EncodeToString([]byte(key))
 
-	base64Str := headBase64 + "." + payloadBase64 + "~" + keyBase64
+	base64Str := headBase64 + "." + loadBase64 + "~" + keyBase64
 
 	signatureBase64 := toSha256(base64Str)
-	return headBase64 + "." + payloadBase64 + "." + signatureBase64
+	return headBase64 + "." + loadBase64 + "." + signatureBase64
 }
 
 // ValidateToken validate token.
-func (token *Token) ValidateToken(tokenStr string) (tokenResult Result, params map[string]string) {
+func (token *Token[T]) ValidateToken(tokenStr string) (tokenResult Result, load *T) {
 
 	if tokenStr == "" {
 		return Failure, nil
 	}
 
-	params = tokenPayloadParams(tokenStr)
+	head, load := token.tokenParams(tokenStr)
 
-	exp, _ := strconv.ParseInt(params["exp"], 10, 64)
-	if exp < time.Now().Unix() {
+	if head.Expire < time.Now().Unix() {
 		return Timeout, nil
 	}
 
@@ -242,19 +241,28 @@ func (token *Token) ValidateToken(tokenStr string) (tokenResult Result, params m
 		base64Str := strings.Split(tokenStr, ".")[0] + "." + strings.Split(tokenStr, ".")[1] + "~" + keyBase64
 		signatureBase64 := strings.Split(tokenStr, ".")[2]
 		if signatureBase64 == toSha256(base64Str) {
-			return Success, params
+			return Success, load
 		}
 	}
+
 	return Failure, nil
 }
 
-// tokenPayloadParams get token params.
-func tokenPayloadParams(tokenStr string) map[string]string {
-	splitStr := strings.Split(tokenStr, ".")[1]
-	payload, _ := base64.StdEncoding.DecodeString(splitStr)
-	params := make(map[string]string)
-	json.Unmarshal(payload, &params)
-	return params
+// tokenParams get token params.
+func (token *Token[T]) tokenParams(tokenStr string) (head Head, load *T) {
+
+	// head
+	splitStr := strings.Split(tokenStr, ".")[0]
+	data, _ := base64.StdEncoding.DecodeString(splitStr)
+	jsoniter.Unmarshal(data, &head)
+
+	// load
+	splitStr = strings.Split(tokenStr, ".")[1]
+	data, _ = base64.StdEncoding.DecodeString(splitStr)
+	load = new(T)
+	jsoniter.Unmarshal(data, load)
+
+	return
 }
 
 // toSha256 sha256.
